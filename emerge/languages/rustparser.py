@@ -4,7 +4,7 @@ Contains the implementation of the Rust language parser and a relevant keyword e
 
 # License: MIT
 
-from typing import Dict
+from typing import Dict, Optional
 from enum import Enum, unique
 import logging
 from pathlib import Path
@@ -119,9 +119,30 @@ class RustParser(AbstractParser, ParsingMixin):
         if not file_content:
             file_content = self.read_input_from_file(result.absolute_name)
 
-        for line in file_content.splitlines():
-            line = line.strip()
-            if not line or line.startswith('//'):
+        in_block_comment = False
+        for raw_line in file_content.splitlines():
+            # Strip block comments while tracking state across lines
+            clean_chars = []
+            i = 0
+            while i < len(raw_line):
+                if in_block_comment:
+                    if raw_line[i:i+2] == '*/':
+                        in_block_comment = False
+                        i += 2
+                    else:
+                        i += 1
+                else:
+                    if raw_line[i:i+2] == '//':
+                        break
+                    if raw_line[i:i+2] == '/*':
+                        in_block_comment = True
+                        i += 2
+                    else:
+                        clean_chars.append(raw_line[i])
+                        i += 1
+
+            line = ''.join(clean_chars).strip()
+            if not line:
                 continue
 
             # Handle 'mod <name>;' declarations (submodule declarations)
@@ -220,7 +241,7 @@ class RustParser(AbstractParser, ParsingMixin):
                 result.scanned_import_dependencies.append(dependency)
                 LOGGER.debug(f'adding use dependency: {dependency}')
 
-    def _resolve_module_path(self, base_dir: str, module_parts: list) -> str:
+    def _resolve_module_path(self, base_dir: str, module_parts: list) -> Optional[str]:
         """Try to resolve a Rust module path to a .rs file.
 
         For 'crate::api::routes', with base_dir as source_dir, module_parts = ['api', 'routes']:
@@ -243,7 +264,7 @@ class RustParser(AbstractParser, ParsingMixin):
 
         return None
 
-    def _add_package_name_to_result(self, result: AbstractResult) -> str:
+    def _add_package_name_to_result(self, result: AbstractResult) -> None:
         result.module_name = ""
 
 
