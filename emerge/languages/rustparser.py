@@ -13,9 +13,9 @@ import re
 
 import coloredlogs
 
-from emerge.languages.abstractparser import AbstractParser, ParsingMixin, Parser, CoreParsingKeyword, LanguageType
+from emerge.languages.abstractparser import AbstractParser, ParsingMixin, Parser, LanguageType
 from emerge.results import FileResult
-from emerge.abstractresult import AbstractResult, AbstractFileResult, AbstractEntityResult
+from emerge.abstractresult import AbstractResult, AbstractEntityResult
 from emerge.log import Logger
 from emerge.stats import Statistics
 
@@ -94,7 +94,9 @@ class RustParser(AbstractParser, ParsingMixin):
             module_name="",
             scanned_by=self.parser_name(),
             scanned_language=LanguageType.RUST,
-            scanned_tokens=scanned_tokens
+            scanned_tokens=scanned_tokens,
+            source=file_content,
+            preprocessed_source=""
         )
 
         self._add_package_name_to_result(file_result)
@@ -112,8 +114,10 @@ class RustParser(AbstractParser, ParsingMixin):
 
     def _add_imports_to_result(self, result: AbstractResult, analysis):
         LOGGER.debug(f'extracting imports from file result {result.scanned_file_name}...')
-        # Read the original file content (not tokenized) to parse imports with clean syntax
-        file_content = self.read_input_from_file(result.absolute_name)
+        # Prefer the in-memory source to avoid redundant I/O
+        file_content = getattr(result, "source", None)
+        if not file_content:
+            file_content = self.read_input_from_file(result.absolute_name)
 
         for line in file_content.splitlines():
             line = line.strip()
@@ -240,7 +244,7 @@ class RustParser(AbstractParser, ParsingMixin):
         return None
 
     def _add_package_name_to_result(self, result: AbstractResult) -> str:
-        result.module_name = None
+        result.module_name = ""
 
 
 if __name__ == "__main__":

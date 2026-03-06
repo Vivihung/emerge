@@ -114,7 +114,7 @@ class FileScanMapper:
             return GoParser.parser_name()
         if file_extension == LanguageExtension.RUST.value:
             return RustParser.parser_name()
-        if file_extension == LanguageExtension.C_HEADER.value or LanguageExtension.CPP_HEADER.value:
+        if file_extension in (LanguageExtension.C_HEADER.value, LanguageExtension.CPP_HEADER.value):
             if only_permit_languages:
                 if 'objc' in only_permit_languages:
                     return ObjCParser.parser_name()
