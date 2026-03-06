@@ -168,8 +168,13 @@ class RustParser(AbstractParser, ParsingMixin):
         return dependency
 
     def _try_parse_mod_declaration(self, line: str, result: AbstractResult, analysis):
-        """Parse 'mod foo;' or 'pub mod foo;' declarations and resolve to file paths."""
-        mod_match = re.match(r'^(?:pub\s+)?mod\s+(\w+)\s*;', line)
+        """Parse mod declarations including pub(crate)/pub(super)/pub(in path) and attribute-prefixed forms."""
+        mod_match = re.match(
+            r'^(?:#\[[^\]]*\]\s*)*'          # optional inline attributes like #[cfg(...)]
+            r'(?:pub(?:\s*\([^)]*\))?\s+)?'  # optional pub with or without (visibility)
+            r'mod\s+([A-Za-z_]\w*)\s*;',     # module name and trailing semicolon
+            line,
+        )
         if not mod_match:
             return
 
@@ -197,49 +202,63 @@ class RustParser(AbstractParser, ParsingMixin):
                 LOGGER.debug(f'adding mod dependency: {dependency}')
 
     def _try_parse_use_statement(self, line: str, result: AbstractResult, analysis):
-        """Parse 'use crate::...', 'use super::...', 'use self::...' statements."""
-        use_match = re.match(r'^(?:pub\s+)?use\s+((?:crate|super|self)(?:::\w+)+)(?:::\{[^}]*\})?\s*;', line)
-        if not use_match:
-            use_match = re.match(r'^(?:pub\s+)?use\s+((?:crate|super|self)(?:::\w+)*)::\{[^}]*\}\s*;', line)
+        """Parse use statements including brace groups, globs, and aliases."""
+        use_match = re.match(r'^(?:pub\s+)?use\s+(.+);', line)
         if not use_match:
             return
 
-        import_path = use_match.group(1)
-
-        parts = import_path.split('::')
-        if not parts:
+        use_body = use_match.group(1).strip()
+        if not use_body or not re.match(r'^(crate|super|self)(::.*)?$', use_body):
             return
 
-        analysis.statistics.increment(Statistics.Key.PARSING_HITS)
+        # Collect fully qualified import paths
+        import_paths = []
+
+        if '{' in use_body and '}' in use_body:
+            brace_start = use_body.find('{')
+            brace_end = use_body.rfind('}')
+            if brace_end <= brace_start:
+                return
+            prefix = use_body[:brace_start].rstrip().rstrip(':')
+            for item in use_body[brace_start + 1:brace_end].split(','):
+                item = re.split(r'\s+as\s+', item.strip(), maxsplit=1)[0].strip()
+                if item:
+                    import_paths.append(f"{prefix}::{item}" if prefix else item)
+        else:
+            body = re.split(r'\s+as\s+', use_body, maxsplit=1)[0].strip()
+            if body.endswith('::*'):
+                body = body[:-3].rstrip(':')
+            if body:
+                import_paths.append(body)
 
         source_dir = analysis.source_directory
         result_dir = str(result.absolute_dir_path)
 
-        resolved = None
+        for import_path in import_paths:
+            if not re.match(r'^(crate|super|self)(?:::\w+)*$', import_path):
+                continue
 
-        if parts[0] == 'crate':
-            # crate:: means from the project root (source_directory)
-            module_parts = parts[1:]
-            resolved = self._resolve_module_path(source_dir, module_parts)
+            parts = import_path.split('::')
+            if len(parts) < 2:
+                continue
 
-        elif parts[0] == 'super':
-            # super:: means parent module
-            parent_dir = str(Path(result_dir).parent)
-            module_parts = parts[1:]
-            resolved = self._resolve_module_path(parent_dir, module_parts)
+            analysis.statistics.increment(Statistics.Key.PARSING_HITS)
+            resolved = None
 
-        elif parts[0] == 'self':
-            # self:: means current module
-            module_parts = parts[1:]
-            resolved = self._resolve_module_path(result_dir, module_parts)
+            if parts[0] == 'crate':
+                resolved = self._resolve_module_path(source_dir, parts[1:])
+            elif parts[0] == 'super':
+                resolved = self._resolve_module_path(str(Path(result_dir).parent), parts[1:])
+            elif parts[0] == 'self':
+                resolved = self._resolve_module_path(result_dir, parts[1:])
 
-        if resolved:
-            dependency = self._to_dependency_name(resolved, analysis)
-            if self._is_dependency_in_ignore_list(dependency, analysis):
-                LOGGER.debug(f'ignoring dependency from {result.unique_name} to {dependency}')
-            else:
-                result.scanned_import_dependencies.append(dependency)
-                LOGGER.debug(f'adding use dependency: {dependency}')
+            if resolved:
+                dependency = self._to_dependency_name(resolved, analysis)
+                if self._is_dependency_in_ignore_list(dependency, analysis):
+                    LOGGER.debug(f'ignoring dependency from {result.unique_name} to {dependency}')
+                else:
+                    result.scanned_import_dependencies.append(dependency)
+                    LOGGER.debug(f'adding use dependency: {dependency}')
 
     def _resolve_module_path(self, base_dir: str, module_parts: list) -> Optional[str]:
         """Try to resolve a Rust module path to a .rs file.
