@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is Emerge
 
-Emerge (emerge-viz) is an interactive code analysis tool that scans source code to calculate metrics, build dependency/filesystem graphs, and generate interactive D3-based web visualizations. It supports 12 languages: C, C++, Groovy, Java, JavaScript, TypeScript, Kotlin, ObjC, Ruby, Swift, Python, Go.
+Emerge (emerge-viz) is an interactive code analysis tool that scans source code to calculate metrics, build dependency/filesystem graphs, and generate interactive D3-based web visualizations. It supports 13 languages: C, C++, Groovy, Java, JavaScript, TypeScript, Kotlin, ObjC, Ruby, Swift, Python, Go, Rust.
 
 ## Common Commands
 
@@ -60,7 +60,7 @@ python emerge.py -a java
 - `emerge/log.py` - Custom `Logger` wrapper with emoji-formatted log levels
 
 ### Tests (`emerge/tests/`)
-- `parsers/` - One test file per language parser, test data in `testdata/` as Python string constants
+- `parsers/` - Test files for language parsers (usually one per parser), test data in `testdata/` as Python string constants
 - `metrics/` - Tests for number_of_methods and tfidf metrics
 - `config/` - Configuration parsing tests
 - Test data files in `testdata/` contain source code snippets as Python multiline strings (not actual source files)

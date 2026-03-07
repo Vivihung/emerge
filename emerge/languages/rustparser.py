@@ -219,7 +219,7 @@ class RustParser(AbstractParser, ParsingMixin):
         use_match = re.match(
             r'^(?:#\[[^\]]*\]\s*)*'          # optional inline attributes
             r'(?:pub(?:\s*\([^)]*\))?\s+)?'  # optional pub with or without (visibility)
-            r'use\s+(.+);',
+            r'use\s+([^;]+);',
             line,
         )
         if not use_match:
