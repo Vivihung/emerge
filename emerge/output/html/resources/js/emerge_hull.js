@@ -145,15 +145,17 @@ function getHullFromPointArray(pointArray) {
     return hullArray
 }
 
-// draw a single cluster hull as a polygon 
+// draw a single cluster hull as a polygon
 function drawHull(context, clusterId) {
     let pointArray = getPointArrayForClusterId(clusterId)
+    if (pointArray.length < 3) return; // need at least 3 points for a hull
     let hullArray = getHullFromPointArray(pointArray)
+    if (hullArray.length < 3) return;
     let firstNodeInCluster = clusterMap[clusterId][0]
     context.fillStyle = nodeColorByModularity(firstNodeInCluster, 0.2)
-    
+
     context.beginPath();
-    
+
     let firstPoint = hullArray[0]
     context.moveTo(firstPoint[0], firstPoint[1]);
     
