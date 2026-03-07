@@ -119,7 +119,11 @@ class RustParser(AbstractParser, ParsingMixin):
         if not file_content:
             file_content = self.read_input_from_file(result.absolute_name)
 
+        # First pass: strip comments and buffer multi-line statements
         in_block_comment = False
+        statement_buffer = ""
+        statements = []
+
         for raw_line in file_content.splitlines():
             # Strip block comments while tracking state across lines
             clean_chars = []
@@ -145,11 +149,22 @@ class RustParser(AbstractParser, ParsingMixin):
             if not line:
                 continue
 
-            # Handle 'mod <name>;' declarations (submodule declarations)
-            self._try_parse_mod_declaration(line, result, analysis)
+            # Buffer lines until we hit a semicolon to handle multi-line use/mod statements
+            statement_buffer = (statement_buffer + " " + line).strip() if statement_buffer else line
+            if ';' in statement_buffer:
+                # Split on semicolons in case multiple statements were buffered
+                parts = statement_buffer.split(';')
+                for part in parts[:-1]:
+                    stmt = part.strip()
+                    if stmt:
+                        statements.append(stmt + ';')
+                # Keep remainder after last semicolon as new buffer
+                statement_buffer = parts[-1].strip()
 
-            # Handle 'use crate::...' and 'use super::...' and 'use self::...' imports
-            self._try_parse_use_statement(line, result, analysis)
+        # Process all complete statements
+        for stmt in statements:
+            self._try_parse_mod_declaration(stmt, result, analysis)
+            self._try_parse_use_statement(stmt, result, analysis)
 
     def _get_module_dir(self, result: AbstractResult) -> str:
         """Derive the Rust module directory for a file.
@@ -243,7 +258,11 @@ class RustParser(AbstractParser, ParsingMixin):
                 if item.endswith('::*'):
                     item = item[:-3].rstrip(':')
                 if item:
-                    import_paths.append(f"{prefix}::{item}" if prefix else item)
+                    # In brace groups, `self` and `super` refer to the prefix module itself
+                    if item in ('self', 'super') and prefix:
+                        import_paths.append(prefix)
+                    else:
+                        import_paths.append(f"{prefix}::{item}" if prefix else item)
         else:
             body = re.split(r'\s+as\s+', use_body, maxsplit=1)[0].strip()
             if body.endswith('::*'):
