@@ -1,0 +1,45 @@
+[project]
+name = "emerge-viz"
+version = "2.0.0"
+description = "Visualize source code structure and dependencies in an interactive d3 application"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    { name = "Grzegorz Lato", email = "grzegorz.lato@gmail.com" },
+]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "autopep8",
+    "coloredlogs",
+    "interrogate",
+    "networkx",
+    "scikit-learn",
+    "numpy",
+    "prettytable",
+    "py",
+    "pycodestyle",
+    "pylint",
+    "pyparsing",
+    "python-louvain",
+    "PyYAML",
+    "tabulate",
+    "PyDriller",
+    "pyperclip",
+]
+
+[project.scripts]
+emerge = "emerge.main:run"
+
+[tool.hatch.build.targets.wheel]
+packages = ["emerge"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

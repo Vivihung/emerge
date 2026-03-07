@@ -13,8 +13,7 @@ from pathlib import Path
 import os
 import sys
 
-import pkg_resources
-from pip._internal.operations.freeze import freeze
+from importlib.metadata import distributions
 
 import coloredlogs
 import pyparsing as pp
@@ -311,24 +310,23 @@ class PythonParser(AbstractParser, ParsingMixin):
         global_dependency_autodetect_set: Set[str] = set()
    
         # first global dependency detection attempt
-        for module in pkg_resources.working_set:
-            
-            try:
-                # pylint: disable=protected-access
-                module_name_from_metadata = next(pkg_resources.get_distribution(module.key)._get_metadata('top_level.txt')) # type: ignore
+        for dist in distributions():
 
+            try:
+                top_level = dist.read_text('top_level.txt')
+                module_name_from_metadata = top_level.split()[0] if top_level else None
             except: # pylint: disable=bare-except
                 module_name_from_metadata = None
-            
+
             if module_name_from_metadata:
                 if '-' not in module_name_from_metadata and '__' not in module_name_from_metadata and not module_name_from_metadata.startswith('_'):
                     global_dependency_autodetect_set.add(module_name_from_metadata)
 
         # second global dependency detection attempt
-        second_global_module_detection_appempt = list(freeze())
-        processed_result_second_detection = [x.split('==', 1)[0].replace('-','_').lower() for x in second_global_module_detection_appempt]
-        for element in processed_result_second_detection:
-            global_dependency_autodetect_set.add(element)
+        for dist in distributions():
+            name = dist.metadata['Name']
+            if name:
+                global_dependency_autodetect_set.add(name.replace('-', '_').lower())
 
         # third global dependency (built-in module) detection attempt
         for builtin_module in sys.modules:

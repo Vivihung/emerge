@@ -5,13 +5,14 @@ Contains all abstract parsing classes and relevant enums.
 # Authors: Grzegorz Lato <grzegorz.lato@gmail.com>
 # License: MIT
 
+import os
 import re
 import logging
 
 from abc import ABC, abstractmethod
 from enum import Enum, unique, auto
 from typing import Dict, List, Generator, Optional, Tuple
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import coloredlogs
 
 from emerge.abstractresult import AbstractResult, AbstractEntityResult
@@ -97,8 +98,8 @@ class ParsingMixin(ABC):
 
         resolved_dependency = relative_analysis_dependency_path
         try:
-            unresolved_path = f'{result_absolute_dir_path}/{relative_analysis_dependency_path}'
-            resolved_path = f'{Path(unresolved_path).resolve()}'
+            unresolved_path = f'{PurePosixPath(result_absolute_dir_path)}/{relative_analysis_dependency_path}'
+            resolved_path = os.path.normpath(unresolved_path).replace(os.sep, '/')
 
             project_scanning_path = analysis_source_directory
             if project_scanning_path[-1] != CoreParsingKeyword.SLASH.value:  # add trailing '/' to project scanning path if necessary
@@ -107,8 +108,9 @@ class ParsingMixin(ABC):
             # if the resolved path is still inside the project path, try to construct a full dependency path
             # which is only relative to the project_scanning_path
             if project_scanning_path in resolved_path:
-                resolved_relative_analysis_dependency_path = str(resolved_path).replace(
-                    f"{Path(analysis_source_directory).parent}{CoreParsingKeyword.SLASH.value}", "")
+                parent_path = str(PurePosixPath(Path(analysis_source_directory).parent))
+                resolved_relative_analysis_dependency_path = resolved_path.replace(
+                    f"{parent_path}{CoreParsingKeyword.SLASH.value}", "")
 
                 resolved_dependency = resolved_relative_analysis_dependency_path
         # pylint: disable=broad-except
@@ -138,7 +140,7 @@ class ParsingMixin(ABC):
 
     @staticmethod
     def create_relative_analysis_file_path(analysis_source_directory: str, full_file_path: str) -> str:
-        parent_analysis_source_path = f"{Path(analysis_source_directory).parent}/"
+        parent_analysis_source_path = f"{Path(analysis_source_directory).parent.as_posix()}/"
         relative_file_path_to_analysis = full_file_path.replace(parent_analysis_source_path, "")
         return relative_file_path_to_analysis
 
