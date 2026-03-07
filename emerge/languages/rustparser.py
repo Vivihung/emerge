@@ -151,6 +151,19 @@ class RustParser(AbstractParser, ParsingMixin):
             # Handle 'use crate::...' and 'use super::...' and 'use self::...' imports
             self._try_parse_use_statement(line, result, analysis)
 
+    def _get_module_dir(self, result: AbstractResult) -> str:
+        """Derive the Rust module directory for a file.
+
+        For mod.rs/lib.rs/main.rs, submodules live in the file's directory.
+        For foo/bar.rs, submodules live under foo/bar/.
+        """
+        result_dir = str(result.absolute_dir_path)
+        file_name = Path(result.absolute_name).name
+        if file_name in ('mod.rs', 'lib.rs', 'main.rs'):
+            return result_dir
+        stem = Path(result.absolute_name).stem
+        return os.path.join(result_dir, stem)
+
     def _to_dependency_name(self, resolved_path: str, analysis) -> str:
         """Convert a resolved file path to a dependency name matching emerge's unique_name format.
 
@@ -181,11 +194,11 @@ class RustParser(AbstractParser, ParsingMixin):
         mod_name = mod_match.group(1)
         analysis.statistics.increment(Statistics.Key.PARSING_HITS)
 
-        result_dir = str(result.absolute_dir_path)
+        module_dir = self._get_module_dir(result)
 
-        # A 'mod foo;' resolves to either: dir/foo.rs or dir/foo/mod.rs
-        candidate_file = os.path.join(result_dir, f"{mod_name}.rs")
-        candidate_mod = os.path.join(result_dir, mod_name, "mod.rs")
+        # A 'mod foo;' resolves to either: module_dir/foo.rs or module_dir/foo/mod.rs
+        candidate_file = os.path.join(module_dir, f"{mod_name}.rs")
+        candidate_mod = os.path.join(module_dir, mod_name, "mod.rs")
 
         resolved = None
         if os.path.exists(candidate_file):
@@ -202,8 +215,13 @@ class RustParser(AbstractParser, ParsingMixin):
                 LOGGER.debug(f'adding mod dependency: {dependency}')
 
     def _try_parse_use_statement(self, line: str, result: AbstractResult, analysis):
-        """Parse use statements including brace groups, globs, and aliases."""
-        use_match = re.match(r'^(?:pub\s+)?use\s+(.+);', line)
+        """Parse use statements including brace groups, globs, aliases, and visibility qualifiers."""
+        use_match = re.match(
+            r'^(?:#\[[^\]]*\]\s*)*'          # optional inline attributes
+            r'(?:pub(?:\s*\([^)]*\))?\s+)?'  # optional pub with or without (visibility)
+            r'use\s+(.+);',
+            line,
+        )
         if not use_match:
             return
 
@@ -222,6 +240,8 @@ class RustParser(AbstractParser, ParsingMixin):
             prefix = use_body[:brace_start].rstrip().rstrip(':')
             for item in use_body[brace_start + 1:brace_end].split(','):
                 item = re.split(r'\s+as\s+', item.strip(), maxsplit=1)[0].strip()
+                if item.endswith('::*'):
+                    item = item[:-3].rstrip(':')
                 if item:
                     import_paths.append(f"{prefix}::{item}" if prefix else item)
         else:
@@ -232,7 +252,7 @@ class RustParser(AbstractParser, ParsingMixin):
                 import_paths.append(body)
 
         source_dir = analysis.source_directory
-        result_dir = str(result.absolute_dir_path)
+        module_dir = self._get_module_dir(result)
 
         for import_path in import_paths:
             if not re.match(r'^(crate|super|self)(?:::\w+)*$', import_path):
@@ -248,9 +268,9 @@ class RustParser(AbstractParser, ParsingMixin):
             if parts[0] == 'crate':
                 resolved = self._resolve_module_path(source_dir, parts[1:])
             elif parts[0] == 'super':
-                resolved = self._resolve_module_path(str(Path(result_dir).parent), parts[1:])
+                resolved = self._resolve_module_path(str(Path(module_dir).parent), parts[1:])
             elif parts[0] == 'self':
-                resolved = self._resolve_module_path(result_dir, parts[1:])
+                resolved = self._resolve_module_path(module_dir, parts[1:])
 
             if resolved:
                 dependency = self._to_dependency_name(resolved, analysis)
