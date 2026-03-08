@@ -94,7 +94,7 @@ class ParsingMixin(ABC):
 
     @staticmethod
     def resolve_relative_dependency_path(relative_analysis_dependency_path: str, result_absolute_dir_path: str, analysis_source_directory: str) -> str:
-        """Creates the absolute path for a dependency and try to resolve it with pathlib."""
+        """Creates the absolute path for a dependency and normalizes relative segments."""
 
         resolved_dependency = relative_analysis_dependency_path
         try:
