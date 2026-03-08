@@ -101,14 +101,14 @@ class ParsingMixin(ABC):
             unresolved_path = f'{PurePosixPath(result_absolute_dir_path)}/{relative_analysis_dependency_path}'
             resolved_path = os.path.normpath(unresolved_path).replace(os.sep, '/')
 
-            project_scanning_path = analysis_source_directory
+            project_scanning_path = analysis_source_directory.replace(os.sep, '/')
             if project_scanning_path[-1] != CoreParsingKeyword.SLASH.value:  # add trailing '/' to project scanning path if necessary
                 project_scanning_path = f"{project_scanning_path}{CoreParsingKeyword.SLASH.value}"
 
             # if the resolved path is still inside the project path, try to construct a full dependency path
             # which is only relative to the project_scanning_path
             if project_scanning_path in resolved_path:
-                parent_path = str(PurePosixPath(Path(analysis_source_directory).parent))
+                parent_path = os.path.normpath(Path(analysis_source_directory).parent).replace(os.sep, '/')
                 resolved_relative_analysis_dependency_path = resolved_path.replace(
                     f"{parent_path}{CoreParsingKeyword.SLASH.value}", "")
 
@@ -141,7 +141,8 @@ class ParsingMixin(ABC):
     @staticmethod
     def create_relative_analysis_file_path(analysis_source_directory: str, full_file_path: str) -> str:
         parent_analysis_source_path = f"{Path(analysis_source_directory).parent.as_posix()}/"
-        relative_file_path_to_analysis = full_file_path.replace(parent_analysis_source_path, "")
+        normalized_full_file_path = Path(full_file_path).as_posix()
+        relative_file_path_to_analysis = normalized_full_file_path.replace(parent_analysis_source_path, "")
         return relative_file_path_to_analysis
 
     @classmethod

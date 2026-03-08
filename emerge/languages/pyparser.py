@@ -309,9 +309,9 @@ class PythonParser(AbstractParser, ParsingMixin):
     def create_autodetect_set(self) -> Set[str]:
         global_dependency_autodetect_set: Set[str] = set()
    
-        # first global dependency detection attempt
+        # global dependency detection from installed distributions
         for dist in distributions():
-
+            # first attempt: use top_level.txt metadata
             try:
                 top_level = dist.read_text('top_level.txt')
                 module_name_from_metadata = top_level.split()[0] if top_level else None
@@ -322,8 +322,7 @@ class PythonParser(AbstractParser, ParsingMixin):
                 if '-' not in module_name_from_metadata and '__' not in module_name_from_metadata and not module_name_from_metadata.startswith('_'):
                     global_dependency_autodetect_set.add(module_name_from_metadata)
 
-        # second global dependency detection attempt
-        for dist in distributions():
+            # second attempt: use distribution name
             name = dist.metadata['Name']
             if name:
                 global_dependency_autodetect_set.add(name.replace('-', '_').lower())
