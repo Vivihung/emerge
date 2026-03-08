@@ -308,29 +308,31 @@ class PythonParser(AbstractParser, ParsingMixin):
 
     def create_autodetect_set(self) -> Set[str]:
         global_dependency_autodetect_set: Set[str] = set()
-   
-        # global dependency detection from installed distributions
+
+        # detect installed packages via importlib.metadata
         for dist in distributions():
-            # first attempt: use top_level.txt metadata
             try:
+                dist_name = dist.metadata['Name']
+
+                # try top_level.txt for the importable module name
                 top_level = dist.read_text('top_level.txt')
-                module_name_from_metadata = top_level.split()[0] if top_level else None
-            except Exception:
-                module_name_from_metadata = None
+                if top_level:
+                    for module_name in top_level.strip().splitlines():
+                        module_name = module_name.strip()
+                        if module_name and '-' not in module_name and '__' not in module_name and not module_name.startswith('_'):
+                            global_dependency_autodetect_set.add(module_name)
 
-            if module_name_from_metadata:
-                if '-' not in module_name_from_metadata and '__' not in module_name_from_metadata and not module_name_from_metadata.startswith('_'):
-                    global_dependency_autodetect_set.add(module_name_from_metadata)
+                # also add the normalized distribution name (replaces pip freeze usage)
+                if dist_name:
+                    normalized = dist_name.replace('-', '_').lower()
+                    global_dependency_autodetect_set.add(normalized)
+            except Exception as exc:
+                LOGGER.debug(f'skipping distribution with unreadable metadata: {dist!r} ({exc})')
 
-            # second attempt: use distribution name
-            name = dist.metadata['Name']
-            if name:
-                global_dependency_autodetect_set.add(name.replace('-', '_').lower())
-
-        # third global dependency (built-in module) detection attempt
-        for builtin_module in sys.modules:
-            if not builtin_module.startswith('_') and not '.' in builtin_module:
-                global_dependency_autodetect_set.add(builtin_module)
+        # detect already-imported modules from sys.modules
+        for module_name in sys.modules:
+            if not module_name.startswith('_') and '.' not in module_name:
+                global_dependency_autodetect_set.add(module_name)
 
         return global_dependency_autodetect_set
 
