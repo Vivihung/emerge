@@ -326,13 +326,13 @@ class PythonParser(AbstractParser, ParsingMixin):
                 if dist_name:
                     normalized = dist_name.replace('-', '_').lower()
                     global_dependency_autodetect_set.add(normalized)
-            except Exception:
-                LOGGER.debug(f'skipping distribution with unreadable metadata: {dist!r}')
+            except Exception as exc:
+                LOGGER.debug(f'skipping distribution with unreadable metadata: {dist!r} ({exc})')
 
         # detect already-imported modules from sys.modules
-        for builtin_module in sys.modules:
-            if not builtin_module.startswith('_') and '.' not in builtin_module:
-                global_dependency_autodetect_set.add(builtin_module)
+        for module_name in sys.modules:
+            if not module_name.startswith('_') and '.' not in module_name:
+                global_dependency_autodetect_set.add(module_name)
 
         return global_dependency_autodetect_set
 
