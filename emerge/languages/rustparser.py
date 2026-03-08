@@ -167,7 +167,7 @@ class RustParser(AbstractParser, ParsingMixin):
         # Process all complete statements
         for stmt in statements:
             self._try_parse_mod_declaration(stmt, result, analysis)
-            if 'crate::' in stmt and not crate_src:
+            if not crate_src and stmt.lstrip().startswith('use ') and 'crate::' in stmt:
                 abs_file_path = str(Path(result.absolute_dir_path) / result.scanned_file_name)
                 crate_src = self._find_crate_src_dir(abs_file_path, analysis.source_directory)
             self._try_parse_use_statement(stmt, result, analysis, crate_src=crate_src)
