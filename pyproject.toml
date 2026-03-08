@@ -43,6 +43,13 @@ emerge = "emerge.main:run"
 [tool.hatch.version]
 path = "emerge/appear.py"
 
+[tool.hatch.build]
+include = [
+    "emerge/**/*.py",
+    "emerge/output/html/**",
+    "emerge/configs/*.yaml",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["emerge"]
 

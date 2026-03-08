@@ -315,7 +315,7 @@ class PythonParser(AbstractParser, ParsingMixin):
             try:
                 top_level = dist.read_text('top_level.txt')
                 module_name_from_metadata = top_level.split()[0] if top_level else None
-            except: # pylint: disable=bare-except
+            except Exception:
                 module_name_from_metadata = None
 
             if module_name_from_metadata:
