@@ -260,7 +260,7 @@ class D3Exporter:
         for _, graph_representation in graph_representations.items():
 
             graph = graph_representation.digraph
-            data = json_graph.node_link_data(graph)
+            data = json_graph.node_link_data(graph, edges="links")
 
             # write data into a json file
             target_export_file_path = export_dir + \
