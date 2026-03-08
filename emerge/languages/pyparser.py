@@ -13,8 +13,7 @@ from pathlib import Path
 import os
 import sys
 
-import pkg_resources
-from pip._internal.operations.freeze import freeze
+import importlib.metadata
 
 import coloredlogs
 import pyparsing as pp
@@ -309,30 +308,27 @@ class PythonParser(AbstractParser, ParsingMixin):
 
     def create_autodetect_set(self) -> Set[str]:
         global_dependency_autodetect_set: Set[str] = set()
-   
-        # first global dependency detection attempt
-        for module in pkg_resources.working_set:
-            
-            try:
-                # pylint: disable=protected-access
-                module_name_from_metadata = next(pkg_resources.get_distribution(module.key)._get_metadata('top_level.txt')) # type: ignore
 
-            except: # pylint: disable=bare-except
-                module_name_from_metadata = None
-            
-            if module_name_from_metadata:
-                if '-' not in module_name_from_metadata and '__' not in module_name_from_metadata and not module_name_from_metadata.startswith('_'):
-                    global_dependency_autodetect_set.add(module_name_from_metadata)
+        # detect installed packages via importlib.metadata
+        for dist in importlib.metadata.distributions():
+            dist_name = dist.metadata['Name']
 
-        # second global dependency detection attempt
-        second_global_module_detection_appempt = list(freeze())
-        processed_result_second_detection = [x.split('==', 1)[0].replace('-','_').lower() for x in second_global_module_detection_appempt]
-        for element in processed_result_second_detection:
-            global_dependency_autodetect_set.add(element)
+            # try top_level.txt for the importable module name
+            top_level = dist.read_text('top_level.txt')
+            if top_level:
+                for module_name in top_level.strip().splitlines():
+                    module_name = module_name.strip()
+                    if module_name and '-' not in module_name and '__' not in module_name and not module_name.startswith('_'):
+                        global_dependency_autodetect_set.add(module_name)
 
-        # third global dependency (built-in module) detection attempt
+            # also add the normalized distribution name (replaces pip freeze usage)
+            if dist_name:
+                normalized = dist_name.replace('-', '_').lower()
+                global_dependency_autodetect_set.add(normalized)
+
+        # detect built-in modules
         for builtin_module in sys.modules:
-            if not builtin_module.startswith('_') and not '.' in builtin_module:
+            if not builtin_module.startswith('_') and '.' not in builtin_module:
                 global_dependency_autodetect_set.add(builtin_module)
 
         return global_dependency_autodetect_set
