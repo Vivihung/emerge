@@ -117,7 +117,6 @@ class RustParserEndToEndTestCase(unittest.TestCase):
 
         # In production, the analyzer passes full_file_path as a path relative
         # to Path(source_directory).parent — mirror that format here.
-        analysis_parent = str(Path(ws).parent)
         relative_commands_path = "project/services/accounts/src/api/commands.rs"
 
         self.parser.generate_file_result_from_analysis(

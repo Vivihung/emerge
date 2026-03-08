@@ -324,7 +324,7 @@ class RustParser(AbstractParser, ParsingMixin):
                 if src_dir.is_dir():
                     return str(src_dir)
                 return str(current)
-            if current == analysis_root or not current.is_relative_to(analysis_root):
+            if current == analysis_root or analysis_root not in current.parents:
                 break
             current = current.parent
         analysis_root_src = Path(analysis_source_dir) / "src"
