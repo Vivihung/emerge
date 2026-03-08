@@ -10,7 +10,7 @@ Emerge (emerge-viz) is an interactive code analysis tool that scans source code 
 
 ```bash
 # Install dependencies
-pip install -r requirements.txt
+pip install -e .
 
 # Run all unit tests with verbose output
 python -m unittest discover -v -s ./emerge -p "test_*.py"

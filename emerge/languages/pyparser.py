@@ -13,7 +13,7 @@ from pathlib import Path
 import os
 import sys
 
-import importlib.metadata
+from importlib.metadata import distributions
 
 import coloredlogs
 import pyparsing as pp
@@ -310,7 +310,7 @@ class PythonParser(AbstractParser, ParsingMixin):
         global_dependency_autodetect_set: Set[str] = set()
 
         # detect installed packages via importlib.metadata
-        for dist in importlib.metadata.distributions():
+        for dist in distributions():
             try:
                 dist_name = dist.metadata['Name']
 

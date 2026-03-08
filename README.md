@@ -313,21 +313,12 @@ python3 -m venv venv
 source venv/bin/activate
 ```
 
-### 4️⃣ ~ (*macOS*) Install all dependencies
+### 4️⃣ ~ Install all dependencies
 
-Install all required dependencies for the project with pip
-
-```text
-pip install -r requirements.txt
-```
-
-### 4️⃣ ~ (*ubuntu*) Install all dependencies
-
-Install the wheel package, after that install all required dependencies for the project with pip
+Install the project and all required dependencies with pip
 
 ```text
-pip install wheel
-pip install -r requirements.txt
+pip install -e .
 ```
 
 ### 5️⃣ ~ Running unit tests from the command line
