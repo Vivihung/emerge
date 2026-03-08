@@ -311,22 +311,25 @@ class PythonParser(AbstractParser, ParsingMixin):
 
         # detect installed packages via importlib.metadata
         for dist in importlib.metadata.distributions():
-            dist_name = dist.metadata['Name']
+            try:
+                dist_name = dist.metadata['Name']
 
-            # try top_level.txt for the importable module name
-            top_level = dist.read_text('top_level.txt')
-            if top_level:
-                for module_name in top_level.strip().splitlines():
-                    module_name = module_name.strip()
-                    if module_name and '-' not in module_name and '__' not in module_name and not module_name.startswith('_'):
-                        global_dependency_autodetect_set.add(module_name)
+                # try top_level.txt for the importable module name
+                top_level = dist.read_text('top_level.txt')
+                if top_level:
+                    for module_name in top_level.strip().splitlines():
+                        module_name = module_name.strip()
+                        if module_name and '-' not in module_name and '__' not in module_name and not module_name.startswith('_'):
+                            global_dependency_autodetect_set.add(module_name)
 
-            # also add the normalized distribution name (replaces pip freeze usage)
-            if dist_name:
-                normalized = dist_name.replace('-', '_').lower()
-                global_dependency_autodetect_set.add(normalized)
+                # also add the normalized distribution name (replaces pip freeze usage)
+                if dist_name:
+                    normalized = dist_name.replace('-', '_').lower()
+                    global_dependency_autodetect_set.add(normalized)
+            except Exception:
+                LOGGER.debug(f'skipping distribution with unreadable metadata: {dist!r}')
 
-        # detect built-in modules
+        # detect already-imported modules from sys.modules
         for builtin_module in sys.modules:
             if not builtin_module.startswith('_') and '.' not in builtin_module:
                 global_dependency_autodetect_set.add(builtin_module)
