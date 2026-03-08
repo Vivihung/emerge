@@ -161,13 +161,15 @@ class RustParser(AbstractParser, ParsingMixin):
                 # Keep remainder after last semicolon as new buffer
                 statement_buffer = parts[-1].strip()
 
-        # Compute crate src dir once per file for use crate:: resolution
-        abs_file_path = str(Path(result.absolute_dir_path) / result.scanned_file_name)
-        crate_src = self._find_crate_src_dir(abs_file_path, analysis.source_directory)
+        # Lazily compute crate src dir on first use crate:: statement
+        crate_src = ""
 
         # Process all complete statements
         for stmt in statements:
             self._try_parse_mod_declaration(stmt, result, analysis)
+            if 'crate::' in stmt and not crate_src:
+                abs_file_path = str(Path(result.absolute_dir_path) / result.scanned_file_name)
+                crate_src = self._find_crate_src_dir(abs_file_path, analysis.source_directory)
             self._try_parse_use_statement(stmt, result, analysis, crate_src=crate_src)
 
     def _get_module_dir(self, result: AbstractResult) -> str:
