@@ -272,6 +272,7 @@ class RustParser(AbstractParser, ParsingMixin):
 
         source_dir = analysis.source_directory
         module_dir = self._get_module_dir(result)
+        crate_src = None  # lazily computed once per file
 
         for import_path in import_paths:
             if not re.match(r'^(crate|super|self)(?:::\w+)*$', import_path):
@@ -285,7 +286,8 @@ class RustParser(AbstractParser, ParsingMixin):
             resolved = None
 
             if parts[0] == 'crate':
-                crate_src = self._find_crate_src_dir(result.absolute_name, source_dir)
+                if crate_src is None:
+                    crate_src = self._find_crate_src_dir(result.absolute_name, source_dir)
                 resolved = self._resolve_module_path(crate_src, parts[1:])
             elif parts[0] == 'super':
                 resolved = self._resolve_module_path(str(Path(module_dir).parent), parts[1:])
@@ -301,11 +303,17 @@ class RustParser(AbstractParser, ParsingMixin):
                     LOGGER.debug(f'adding use dependency: {dependency}')
 
     def _find_crate_src_dir(self, file_path: str, analysis_source_dir: str) -> str:
-        """Find the crate's src/ directory by walking up to the nearest Cargo.toml."""
+        """Find the base directory for resolving crate:: imports.
+
+        Walks up from file_path to the nearest Cargo.toml and returns its src/
+        subdirectory if it exists, otherwise the Cargo.toml's parent directory.
+        Falls back to analysis_source_dir (or its src/ subdirectory) if no
+        Cargo.toml is found within the analysis root.
+        """
         current = Path(file_path).parent
         analysis_root = Path(analysis_source_dir).resolve()
         while current != current.parent:
-            if (current / "Cargo.toml").exists():
+            if (current / "Cargo.toml").is_file():
                 src_dir = current / "src"
                 if src_dir.is_dir():
                     return str(src_dir)
@@ -313,6 +321,9 @@ class RustParser(AbstractParser, ParsingMixin):
             if current.resolve() == analysis_root:
                 break
             current = current.parent
+        analysis_root_src = Path(analysis_source_dir) / "src"
+        if analysis_root_src.is_dir():
+            return str(analysis_root_src)
         return analysis_source_dir
 
     def _resolve_module_path(self, base_dir: str, module_parts: list) -> Optional[str]:
