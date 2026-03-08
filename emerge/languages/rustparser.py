@@ -287,7 +287,10 @@ class RustParser(AbstractParser, ParsingMixin):
 
             if parts[0] == 'crate':
                 if crate_src is None:
-                    crate_src = self._find_crate_src_dir(result.absolute_name, source_dir)
+                    # Use absolute_dir_path (truly absolute) rather than result.absolute_name
+                    # which is relative to the analysis source_directory parent.
+                    abs_file_path = str(Path(result.absolute_dir_path) / result.scanned_file_name)
+                    crate_src = self._find_crate_src_dir(abs_file_path, source_dir)
                 resolved = self._resolve_module_path(crate_src, parts[1:])
             elif parts[0] == 'super':
                 resolved = self._resolve_module_path(str(Path(module_dir).parent), parts[1:])
@@ -309,8 +312,11 @@ class RustParser(AbstractParser, ParsingMixin):
         subdirectory if it exists, otherwise the Cargo.toml's parent directory.
         Falls back to analysis_source_dir (or its src/ subdirectory) if no
         Cargo.toml is found within the analysis root.
+
+        file_path must be an absolute filesystem path (not the relative
+        analysis name stored in result.absolute_name).
         """
-        current = Path(file_path).parent
+        current = Path(file_path).resolve().parent
         analysis_root = Path(analysis_source_dir).resolve()
         while current != current.parent:
             if (current / "Cargo.toml").is_file():
@@ -318,7 +324,7 @@ class RustParser(AbstractParser, ParsingMixin):
                 if src_dir.is_dir():
                     return str(src_dir)
                 return str(current)
-            if current.resolve() == analysis_root:
+            if current == analysis_root or not current.is_relative_to(analysis_root):
                 break
             current = current.parent
         analysis_root_src = Path(analysis_source_dir) / "src"

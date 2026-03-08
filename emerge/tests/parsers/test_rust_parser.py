@@ -7,12 +7,7 @@ import unittest
 from pathlib import Path
 
 from emerge.languages.rustparser import RustParser
-
-try:
-    from emerge.analysis import Analysis
-    HAS_ANALYSIS = True
-except ImportError:
-    HAS_ANALYSIS = False
+from emerge.analysis import Analysis
 
 
 class RustParserFindCrateSrcDirTestCase(unittest.TestCase):
@@ -85,7 +80,6 @@ class RustParserFindCrateSrcDirTestCase(unittest.TestCase):
         self.assertEqual(result, str(member_src))
 
 
-@unittest.skipUnless(HAS_ANALYSIS, "emerge.analysis not importable (missing dependencies)")
 class RustParserEndToEndTestCase(unittest.TestCase):
     """End-to-end test: generate_file_result_from_analysis with a workspace layout."""
 
@@ -112,7 +106,7 @@ class RustParserEndToEndTestCase(unittest.TestCase):
         self._make("project", "services", "accounts", "src", "main.rs")
         self._make("project", "services", "accounts", "src", "domain", "mod.rs", content="pub mod account;")
         self._make("project", "services", "accounts", "src", "domain", "account.rs", content="pub struct Account;")
-        commands_path = self._make(
+        self._make(
             "project", "services", "accounts", "src", "api", "commands.rs",
             content="use crate::domain::account::Account;\n"
         )
@@ -121,10 +115,15 @@ class RustParserEndToEndTestCase(unittest.TestCase):
         analysis.analysis_name = "test"
         analysis.source_directory = str(ws)
 
+        # In production, the analyzer passes full_file_path as a path relative
+        # to Path(source_directory).parent — mirror that format here.
+        analysis_parent = str(Path(ws).parent)
+        relative_commands_path = "project/services/accounts/src/api/commands.rs"
+
         self.parser.generate_file_result_from_analysis(
             analysis,
             file_name="commands.rs",
-            full_file_path=commands_path,
+            full_file_path=relative_commands_path,
             file_content="use crate::domain::account::Account;\n",
         )
 
