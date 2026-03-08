@@ -1,6 +1,6 @@
 [project]
 name = "emerge-viz"
-version = "2.0.0"
+dynamic = ["version"]
 description = "Visualize source code structure and dependencies in an interactive d3 application"
 readme = "README.md"
 license = "MIT"
@@ -36,6 +36,9 @@ dependencies = [
 
 [project.scripts]
 emerge = "emerge.main:run"
+
+[tool.hatch.version]
+path = "emerge/appear.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["emerge"]
