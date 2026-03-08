@@ -161,10 +161,14 @@ class RustParser(AbstractParser, ParsingMixin):
                 # Keep remainder after last semicolon as new buffer
                 statement_buffer = parts[-1].strip()
 
+        # Compute crate src dir once per file for use crate:: resolution
+        abs_file_path = str(Path(result.absolute_dir_path) / result.scanned_file_name)
+        crate_src = self._find_crate_src_dir(abs_file_path, analysis.source_directory)
+
         # Process all complete statements
         for stmt in statements:
             self._try_parse_mod_declaration(stmt, result, analysis)
-            self._try_parse_use_statement(stmt, result, analysis)
+            self._try_parse_use_statement(stmt, result, analysis, crate_src=crate_src)
 
     def _get_module_dir(self, result: AbstractResult) -> str:
         """Derive the Rust module directory for a file.
@@ -229,7 +233,7 @@ class RustParser(AbstractParser, ParsingMixin):
                 result.scanned_import_dependencies.append(dependency)
                 LOGGER.debug(f'adding mod dependency: {dependency}')
 
-    def _try_parse_use_statement(self, line: str, result: AbstractResult, analysis):
+    def _try_parse_use_statement(self, line: str, result: AbstractResult, analysis, *, crate_src: str = ""):
         """Parse use statements including brace groups, globs, aliases, and visibility qualifiers."""
         use_match = re.match(
             r'^(?:#\[[^\]]*\]\s*)*'          # optional inline attributes
@@ -270,9 +274,7 @@ class RustParser(AbstractParser, ParsingMixin):
             if body:
                 import_paths.append(body)
 
-        source_dir = analysis.source_directory
         module_dir = self._get_module_dir(result)
-        crate_src = None  # lazily computed once per file
 
         for import_path in import_paths:
             if not re.match(r'^(crate|super|self)(?:::\w+)*$', import_path):
@@ -286,11 +288,6 @@ class RustParser(AbstractParser, ParsingMixin):
             resolved = None
 
             if parts[0] == 'crate':
-                if crate_src is None:
-                    # Use absolute_dir_path (truly absolute) rather than result.absolute_name
-                    # which is relative to the analysis source_directory parent.
-                    abs_file_path = str(Path(result.absolute_dir_path) / result.scanned_file_name)
-                    crate_src = self._find_crate_src_dir(abs_file_path, source_dir)
                 resolved = self._resolve_module_path(crate_src, parts[1:])
             elif parts[0] == 'super':
                 resolved = self._resolve_module_path(str(Path(module_dir).parent), parts[1:])
@@ -327,10 +324,10 @@ class RustParser(AbstractParser, ParsingMixin):
             if current == analysis_root or analysis_root not in current.parents:
                 break
             current = current.parent
-        analysis_root_src = Path(analysis_source_dir) / "src"
+        analysis_root_src = analysis_root / "src"
         if analysis_root_src.is_dir():
             return str(analysis_root_src)
-        return analysis_source_dir
+        return str(analysis_root)
 
     def _resolve_module_path(self, base_dir: str, module_parts: list) -> Optional[str]:
         """Try to resolve a Rust module path to a .rs file.

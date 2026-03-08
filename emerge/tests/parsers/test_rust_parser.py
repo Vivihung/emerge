@@ -56,8 +56,8 @@ class RustParserFindCrateSrcDirTestCase(unittest.TestCase):
         file_path = self._make("nocargo", "src", "main.rs")
 
         result = self.parser._find_crate_src_dir(file_path, str(project))
-        # Should fall back to src/ under analysis_source_dir
-        self.assertEqual(result, str(project / "src"))
+        # Should fall back to src/ under the resolved analysis_source_dir
+        self.assertEqual(result, str(project.resolve() / "src"))
 
     def test_fallback_no_src_dir(self):
         """Falls back to analysis_source_dir itself when neither Cargo.toml nor src/ exists."""
@@ -65,14 +65,14 @@ class RustParserFindCrateSrcDirTestCase(unittest.TestCase):
         file_path = self._make("flat", "main.rs")
 
         result = self.parser._find_crate_src_dir(file_path, str(project))
-        self.assertEqual(result, str(project))
+        self.assertEqual(result, str(project.resolve()))
 
     def test_does_not_escape_analysis_root(self):
         """Should not walk above the analysis source_directory."""
         workspace = Path(self.tmpdir) / "workspace"
         # Cargo.toml only at workspace level, not inside the member
         self._make("workspace", "Cargo.toml", content="[workspace]")
-        member_src = workspace / "member" / "src"
+        member_src = (workspace / "member" / "src").resolve()
         file_path = self._make("workspace", "member", "src", "lib.rs")
 
         # analysis root is the member directory — should NOT find workspace Cargo.toml
