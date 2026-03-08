@@ -285,7 +285,8 @@ class RustParser(AbstractParser, ParsingMixin):
             resolved = None
 
             if parts[0] == 'crate':
-                resolved = self._resolve_module_path(source_dir, parts[1:])
+                crate_src = self._find_crate_src_dir(result.absolute_name, source_dir)
+                resolved = self._resolve_module_path(crate_src, parts[1:])
             elif parts[0] == 'super':
                 resolved = self._resolve_module_path(str(Path(module_dir).parent), parts[1:])
             elif parts[0] == 'self':
@@ -298,6 +299,21 @@ class RustParser(AbstractParser, ParsingMixin):
                 else:
                     result.scanned_import_dependencies.append(dependency)
                     LOGGER.debug(f'adding use dependency: {dependency}')
+
+    def _find_crate_src_dir(self, file_path: str, analysis_source_dir: str) -> str:
+        """Find the crate's src/ directory by walking up to the nearest Cargo.toml."""
+        current = Path(file_path).parent
+        analysis_root = Path(analysis_source_dir).resolve()
+        while current != current.parent:
+            if (current / "Cargo.toml").exists():
+                src_dir = current / "src"
+                if src_dir.is_dir():
+                    return str(src_dir)
+                return str(current)
+            if current.resolve() == analysis_root:
+                break
+            current = current.parent
+        return analysis_source_dir
 
     def _resolve_module_path(self, base_dir: str, module_parts: list) -> Optional[str]:
         """Try to resolve a Rust module path to a .rs file.
