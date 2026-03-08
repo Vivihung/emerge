@@ -161,10 +161,16 @@ class RustParser(AbstractParser, ParsingMixin):
                 # Keep remainder after last semicolon as new buffer
                 statement_buffer = parts[-1].strip()
 
+        # Lazily compute crate src dir on first use crate:: statement
+        crate_src = ""
+
         # Process all complete statements
         for stmt in statements:
             self._try_parse_mod_declaration(stmt, result, analysis)
-            self._try_parse_use_statement(stmt, result, analysis)
+            if not crate_src and stmt.lstrip().startswith('use ') and 'crate::' in stmt:
+                abs_file_path = str(Path(result.absolute_dir_path) / result.scanned_file_name)
+                crate_src = self._find_crate_src_dir(abs_file_path, analysis.source_directory)
+            self._try_parse_use_statement(stmt, result, analysis, crate_src=crate_src)
 
     def _get_module_dir(self, result: AbstractResult) -> str:
         """Derive the Rust module directory for a file.
@@ -229,7 +235,7 @@ class RustParser(AbstractParser, ParsingMixin):
                 result.scanned_import_dependencies.append(dependency)
                 LOGGER.debug(f'adding mod dependency: {dependency}')
 
-    def _try_parse_use_statement(self, line: str, result: AbstractResult, analysis):
+    def _try_parse_use_statement(self, line: str, result: AbstractResult, analysis, *, crate_src: str = ""):
         """Parse use statements including brace groups, globs, aliases, and visibility qualifiers."""
         use_match = re.match(
             r'^(?:#\[[^\]]*\]\s*)*'          # optional inline attributes
@@ -270,7 +276,6 @@ class RustParser(AbstractParser, ParsingMixin):
             if body:
                 import_paths.append(body)
 
-        source_dir = analysis.source_directory
         module_dir = self._get_module_dir(result)
 
         for import_path in import_paths:
@@ -285,7 +290,7 @@ class RustParser(AbstractParser, ParsingMixin):
             resolved = None
 
             if parts[0] == 'crate':
-                resolved = self._resolve_module_path(source_dir, parts[1:])
+                resolved = self._resolve_module_path(crate_src, parts[1:])
             elif parts[0] == 'super':
                 resolved = self._resolve_module_path(str(Path(module_dir).parent), parts[1:])
             elif parts[0] == 'self':
@@ -298,6 +303,33 @@ class RustParser(AbstractParser, ParsingMixin):
                 else:
                     result.scanned_import_dependencies.append(dependency)
                     LOGGER.debug(f'adding use dependency: {dependency}')
+
+    def _find_crate_src_dir(self, file_path: str, analysis_source_dir: str) -> str:
+        """Find the base directory for resolving crate:: imports.
+
+        Walks up from file_path to the nearest Cargo.toml and returns its src/
+        subdirectory if it exists, otherwise the Cargo.toml's parent directory.
+        Falls back to analysis_source_dir (or its src/ subdirectory) if no
+        Cargo.toml is found within the analysis root.
+
+        file_path must be an absolute filesystem path (not the relative
+        analysis name stored in result.absolute_name).
+        """
+        current = Path(file_path).resolve().parent
+        analysis_root = Path(analysis_source_dir).resolve()
+        while current != current.parent:
+            if (current / "Cargo.toml").is_file():
+                src_dir = current / "src"
+                if src_dir.is_dir():
+                    return str(src_dir)
+                return str(current)
+            if current == analysis_root or analysis_root not in current.parents:
+                break
+            current = current.parent
+        analysis_root_src = analysis_root / "src"
+        if analysis_root_src.is_dir():
+            return str(analysis_root_src)
+        return str(analysis_root)
 
     def _resolve_module_path(self, base_dir: str, module_parts: list) -> Optional[str]:
         """Try to resolve a Rust module path to a .rs file.
