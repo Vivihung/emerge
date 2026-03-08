@@ -2,12 +2,17 @@
 Unit tests for the Rust parser's crate:: resolution in Cargo workspace layouts.
 """
 
-import os
 import tempfile
 import unittest
 from pathlib import Path
 
 from emerge.languages.rustparser import RustParser
+
+try:
+    from emerge.analysis import Analysis
+    HAS_ANALYSIS = True
+except ImportError:
+    HAS_ANALYSIS = False
 
 
 class RustParserFindCrateSrcDirTestCase(unittest.TestCase):
@@ -78,6 +83,65 @@ class RustParserFindCrateSrcDirTestCase(unittest.TestCase):
         # analysis root is the member directory — should NOT find workspace Cargo.toml
         result = self.parser._find_crate_src_dir(file_path, str(workspace / "member"))
         self.assertEqual(result, str(member_src))
+
+
+@unittest.skipUnless(HAS_ANALYSIS, "emerge.analysis not importable (missing dependencies)")
+class RustParserEndToEndTestCase(unittest.TestCase):
+    """End-to-end test: generate_file_result_from_analysis with a workspace layout."""
+
+    def setUp(self):
+        self.parser = RustParser()
+        self.tmpdir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _make(self, *parts, content=""):
+        path = Path(self.tmpdir, *parts)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+        return str(path)
+
+    def test_workspace_crate_use_resolved(self):
+        """use crate::domain::account in a workspace member resolves to the correct file."""
+        ws = Path(self.tmpdir) / "project"
+
+        self._make("project", "Cargo.toml", content="[workspace]")
+        self._make("project", "services", "accounts", "Cargo.toml", content="[package]")
+        self._make("project", "services", "accounts", "src", "main.rs")
+        self._make("project", "services", "accounts", "src", "domain", "mod.rs", content="pub mod account;")
+        self._make("project", "services", "accounts", "src", "domain", "account.rs", content="pub struct Account;")
+        commands_path = self._make(
+            "project", "services", "accounts", "src", "api", "commands.rs",
+            content="use crate::domain::account::Account;\n"
+        )
+
+        analysis = Analysis()
+        analysis.analysis_name = "test"
+        analysis.source_directory = str(ws)
+
+        self.parser.generate_file_result_from_analysis(
+            analysis,
+            file_name="commands.rs",
+            full_file_path=commands_path,
+            file_content="use crate::domain::account::Account;\n",
+        )
+
+        results = self.parser.results
+        self.assertTrue(results)
+        result = list(results.values())[0]
+
+        # The dependency should resolve to the account.rs inside the member crate
+        self.assertTrue(
+            len(result.scanned_import_dependencies) > 0,
+            "Expected at least one dependency from use crate::domain::account"
+        )
+        dep = result.scanned_import_dependencies[0]
+        self.assertIn("domain", dep)
+        self.assertIn("account.rs", dep)
+        # Must NOT be at workspace root level
+        self.assertIn("services", dep)
 
 
 if __name__ == "__main__":
