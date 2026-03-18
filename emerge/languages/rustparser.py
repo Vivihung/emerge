@@ -11,7 +11,10 @@ import logging
 from pathlib import Path
 import os
 import re
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
 
 import coloredlogs
 
@@ -48,6 +51,7 @@ class RustParser(AbstractParser, ParsingMixin):
     def __init__(self):
         self._results: Dict[str, AbstractResult] = {}
         self._workspace_members: Optional[Dict[str, str]] = None
+        self._workspace_members_source_dir: Optional[str] = None
         self._token_mappings: Dict[str, str] = {
             ':': ' : ',
             ';': ' ; ',
@@ -167,9 +171,10 @@ class RustParser(AbstractParser, ParsingMixin):
         # Lazily compute crate src dir on first use crate:: statement
         crate_src = ""
 
-        # Lazily detect workspace members once per parser instance
-        if self._workspace_members is None:
+        # Lazily detect workspace members, invalidating cache when source_directory changes
+        if self._workspace_members is None or self._workspace_members_source_dir != analysis.source_directory:
             self._workspace_members = self._detect_workspace_members(analysis.source_directory)
+            self._workspace_members_source_dir = analysis.source_directory
 
         # Process all complete statements
         for stmt in statements:
@@ -388,31 +393,28 @@ class RustParser(AbstractParser, ParsingMixin):
     def _detect_workspace_members(self, source_directory: str) -> Dict[str, str]:
         """Detect Cargo workspace member crates and return a mapping of crate name to src/ directory.
 
-        Walks up from source_directory to find a Cargo.toml with a [workspace] section,
+        Checks source_directory for a Cargo.toml with a [workspace] section,
         then reads each member's Cargo.toml to get the package name. Hyphens in crate names
         are converted to underscores (Rust convention). Glob patterns in members are expanded.
+
+        Only inspects source_directory itself (not parent directories) to stay consistent
+        with the analysis boundary and avoid pulling in members outside the analysis tree.
         """
         members: Dict[str, str] = {}
-        workspace_root = None
+        workspace_root = Path(source_directory).resolve()
         workspace_toml = None
 
-        # Walk up from source_directory to find workspace root Cargo.toml
-        current = Path(source_directory).resolve()
-        while current != current.parent:
-            cargo_path = current / "Cargo.toml"
-            if cargo_path.is_file():
-                try:
-                    with open(cargo_path, "rb") as f:
-                        data = tomllib.load(f)
-                    if "workspace" in data:
-                        workspace_root = current
-                        workspace_toml = data
-                        break
-                except Exception:
-                    pass
-            current = current.parent
+        cargo_path = workspace_root / "Cargo.toml"
+        if cargo_path.is_file():
+            try:
+                with open(cargo_path, "rb") as f:
+                    data = tomllib.load(f)
+                if "workspace" in data:
+                    workspace_toml = data
+            except Exception:
+                pass
 
-        if not workspace_root or not workspace_toml:
+        if not workspace_toml:
             return members
 
         # Get member patterns from workspace config

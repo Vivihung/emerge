@@ -32,6 +32,7 @@ dependencies = [
     "tabulate",
     "PyDriller",
     "pyperclip",
+    "tomli>=1.0.0;python_version<'3.11'",
 ]
 
 [project.urls]
