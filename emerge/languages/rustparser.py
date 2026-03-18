@@ -411,8 +411,8 @@ class RustParser(AbstractParser, ParsingMixin):
                     data = tomllib.load(f)
                 if "workspace" in data:
                     workspace_toml = data
-            except Exception:
-                pass
+            except (OSError, tomllib.TOMLDecodeError) as e:
+                LOGGER.debug(f'failed to parse workspace Cargo.toml at {cargo_path}: {e}')
 
         if not workspace_toml:
             return members
@@ -422,7 +422,7 @@ class RustParser(AbstractParser, ParsingMixin):
         if not member_patterns:
             return members
 
-        # Expand glob patterns and collect member directories
+        # Expand glob patterns and collect member directories, filtering to those within workspace_root
         member_dirs = []
         for pattern in member_patterns:
             expanded = globmod.glob(str(workspace_root / pattern))
@@ -433,6 +433,13 @@ class RustParser(AbstractParser, ParsingMixin):
                 literal = workspace_root / pattern
                 if literal.is_dir():
                     member_dirs.append(str(literal))
+
+        # Filter out any member dirs that resolve outside the workspace root
+        resolved_root = str(workspace_root) + os.sep
+        member_dirs = [
+            d for d in member_dirs
+            if os.path.realpath(d).startswith(resolved_root) or os.path.realpath(d) == str(workspace_root)
+        ]
 
         # Read each member's Cargo.toml to get the package name
         for member_dir in member_dirs:
@@ -452,7 +459,8 @@ class RustParser(AbstractParser, ParsingMixin):
                     members[crate_name] = str(src_dir)
                 else:
                     members[crate_name] = str(member_dir)
-            except Exception:
+            except (OSError, tomllib.TOMLDecodeError) as e:
+                LOGGER.debug(f'skipping workspace member at {member_dir}: {e}')
                 continue
 
         LOGGER.debug(f'detected workspace members: {list(members.keys())}')
