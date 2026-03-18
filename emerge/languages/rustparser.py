@@ -6,10 +6,12 @@ Contains the implementation of the Rust language parser and a relevant keyword e
 
 from typing import Dict, Optional
 from enum import Enum, unique
+import glob as globmod
 import logging
 from pathlib import Path
 import os
 import re
+import tomllib
 
 import coloredlogs
 
@@ -45,6 +47,7 @@ class RustParser(AbstractParser, ParsingMixin):
 
     def __init__(self):
         self._results: Dict[str, AbstractResult] = {}
+        self._workspace_members: Optional[Dict[str, str]] = None
         self._token_mappings: Dict[str, str] = {
             ':': ' : ',
             ';': ' ; ',
@@ -164,6 +167,10 @@ class RustParser(AbstractParser, ParsingMixin):
         # Lazily compute crate src dir on first use crate:: statement
         crate_src = ""
 
+        # Lazily detect workspace members once per parser instance
+        if self._workspace_members is None:
+            self._workspace_members = self._detect_workspace_members(analysis.source_directory)
+
         # Process all complete statements
         for stmt in statements:
             self._try_parse_mod_declaration(stmt, result, analysis)
@@ -247,8 +254,17 @@ class RustParser(AbstractParser, ParsingMixin):
             return
 
         use_body = use_match.group(1).strip()
-        if not use_body or not re.match(r'^(crate|super|self)(::.*)?$', use_body):
+        if not use_body:
             return
+
+        # Determine the first path segment to decide if this is an internal import
+        first_segment = use_body.split('::')[0].split('{')[0].strip()
+        workspace_members = self._workspace_members or {}
+        is_internal = first_segment in ('crate', 'super', 'self')
+        is_workspace_member = first_segment in workspace_members
+
+        if not is_internal and not is_workspace_member:
+            return  # truly external crate, skip
 
         # Collect fully qualified import paths
         import_paths = []
@@ -279,30 +295,45 @@ class RustParser(AbstractParser, ParsingMixin):
         module_dir = self._get_module_dir(result)
 
         for import_path in import_paths:
-            if not re.match(r'^(crate|super|self)(?:::\w+)*$', import_path):
-                continue
-
             parts = import_path.split('::')
             if len(parts) < 2:
                 continue
 
-            analysis.statistics.increment(Statistics.Key.PARSING_HITS)
-            resolved = None
+            first = parts[0]
 
-            if parts[0] == 'crate':
-                resolved = self._resolve_module_path(crate_src, parts[1:])
-            elif parts[0] == 'super':
-                resolved = self._resolve_module_path(str(Path(module_dir).parent), parts[1:])
-            elif parts[0] == 'self':
-                resolved = self._resolve_module_path(module_dir, parts[1:])
+            if first in ('crate', 'super', 'self'):
+                if not re.match(r'^(crate|super|self)(?:::\w+)*$', import_path):
+                    continue
 
-            if resolved:
-                dependency = self._to_dependency_name(resolved, analysis)
-                if self._is_dependency_in_ignore_list(dependency, analysis):
-                    LOGGER.debug(f'ignoring dependency from {result.unique_name} to {dependency}')
-                else:
-                    result.scanned_import_dependencies.append(dependency)
-                    LOGGER.debug(f'adding use dependency: {dependency}')
+                analysis.statistics.increment(Statistics.Key.PARSING_HITS)
+                resolved = None
+
+                if first == 'crate':
+                    resolved = self._resolve_module_path(crate_src, parts[1:])
+                elif first == 'super':
+                    resolved = self._resolve_module_path(str(Path(module_dir).parent), parts[1:])
+                elif first == 'self':
+                    resolved = self._resolve_module_path(module_dir, parts[1:])
+
+                if resolved:
+                    dependency = self._to_dependency_name(resolved, analysis)
+                    if self._is_dependency_in_ignore_list(dependency, analysis):
+                        LOGGER.debug(f'ignoring dependency from {result.unique_name} to {dependency}')
+                    else:
+                        result.scanned_import_dependencies.append(dependency)
+                        LOGGER.debug(f'adding use dependency: {dependency}')
+
+            elif first in workspace_members:
+                analysis.statistics.increment(Statistics.Key.PARSING_HITS)
+                member_src = workspace_members[first]
+                resolved = self._resolve_module_path(member_src, parts[1:])
+                if resolved:
+                    dependency = self._to_dependency_name(resolved, analysis)
+                    if self._is_dependency_in_ignore_list(dependency, analysis):
+                        LOGGER.debug(f'ignoring dependency from {result.unique_name} to {dependency}')
+                    else:
+                        result.scanned_import_dependencies.append(dependency)
+                        LOGGER.debug(f'adding workspace member dependency: {dependency}')
 
     def _find_crate_src_dir(self, file_path: str, analysis_source_dir: str) -> str:
         """Find the base directory for resolving crate:: imports.
@@ -353,6 +384,77 @@ class RustParser(AbstractParser, ParsingMixin):
                 return candidate_mod.replace('\\', '/')
 
         return None
+
+    def _detect_workspace_members(self, source_directory: str) -> Dict[str, str]:
+        """Detect Cargo workspace member crates and return a mapping of crate name to src/ directory.
+
+        Walks up from source_directory to find a Cargo.toml with a [workspace] section,
+        then reads each member's Cargo.toml to get the package name. Hyphens in crate names
+        are converted to underscores (Rust convention). Glob patterns in members are expanded.
+        """
+        members: Dict[str, str] = {}
+        workspace_root = None
+        workspace_toml = None
+
+        # Walk up from source_directory to find workspace root Cargo.toml
+        current = Path(source_directory).resolve()
+        while current != current.parent:
+            cargo_path = current / "Cargo.toml"
+            if cargo_path.is_file():
+                try:
+                    with open(cargo_path, "rb") as f:
+                        data = tomllib.load(f)
+                    if "workspace" in data:
+                        workspace_root = current
+                        workspace_toml = data
+                        break
+                except Exception:
+                    pass
+            current = current.parent
+
+        if not workspace_root or not workspace_toml:
+            return members
+
+        # Get member patterns from workspace config
+        member_patterns = workspace_toml.get("workspace", {}).get("members", [])
+        if not member_patterns:
+            return members
+
+        # Expand glob patterns and collect member directories
+        member_dirs = []
+        for pattern in member_patterns:
+            expanded = globmod.glob(str(workspace_root / pattern))
+            if expanded:
+                member_dirs.extend(expanded)
+            else:
+                # Non-glob literal path
+                literal = workspace_root / pattern
+                if literal.is_dir():
+                    member_dirs.append(str(literal))
+
+        # Read each member's Cargo.toml to get the package name
+        for member_dir in member_dirs:
+            member_cargo = Path(member_dir) / "Cargo.toml"
+            if not member_cargo.is_file():
+                continue
+            try:
+                with open(member_cargo, "rb") as f:
+                    member_data = tomllib.load(f)
+                pkg_name = member_data.get("package", {}).get("name", "")
+                if not pkg_name:
+                    continue
+                # Rust convention: hyphens become underscores in use statements
+                crate_name = pkg_name.replace("-", "_")
+                src_dir = Path(member_dir) / "src"
+                if src_dir.is_dir():
+                    members[crate_name] = str(src_dir)
+                else:
+                    members[crate_name] = str(member_dir)
+            except Exception:
+                continue
+
+        LOGGER.debug(f'detected workspace members: {list(members.keys())}')
+        return members
 
     def _add_package_name_to_result(self, result: AbstractResult) -> None:
         result.module_name = ""
